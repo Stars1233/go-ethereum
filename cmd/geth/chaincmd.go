@@ -58,7 +58,7 @@ var (
 		ArgsUsage: "<genesisPath>",
 		Flags: slices.Concat([]cli.Flag{
 			utils.CachePreimagesFlag,
-			utils.OverridePrague,
+			utils.OverrideOsaka,
 			utils.OverrideVerkle,
 		}, utils.DatabaseFlags),
 		Description: `
@@ -269,9 +269,9 @@ func initGenesis(ctx *cli.Context) error {
 	defer stack.Close()
 
 	var overrides core.ChainOverrides
-	if ctx.IsSet(utils.OverridePrague.Name) {
-		v := ctx.Uint64(utils.OverridePrague.Name)
-		overrides.OverridePrague = &v
+	if ctx.IsSet(utils.OverrideOsaka.Name) {
+		v := ctx.Uint64(utils.OverrideOsaka.Name)
+		overrides.OverrideOsaka = &v
 	}
 	if ctx.IsSet(utils.OverrideVerkle.Name) {
 		v := ctx.Uint64(utils.OverrideVerkle.Name)
@@ -723,8 +723,12 @@ func downloadEra(ctx *cli.Context) error {
 	// Resolve the destination directory.
 	stack, _ := makeConfigNode(ctx)
 	defer stack.Close()
+
 	ancients := stack.ResolveAncient("chaindata", "")
-	dir := filepath.Join(ancients, "era")
+	dir := filepath.Join(ancients, rawdb.ChainFreezerName, "era")
+	if ctx.IsSet(utils.EraFlag.Name) {
+		dir = filepath.Join(ancients, ctx.String(utils.EraFlag.Name))
+	}
 
 	baseURL := ctx.String(eraServerFlag.Name)
 	if baseURL == "" {
@@ -761,15 +765,8 @@ func downloadEra(ctx *cli.Context) error {
 }
 
 func parseRange(s string) (start uint64, end uint64, ok bool) {
-	if m, _ := regexp.MatchString("[0-9]+", s); m {
-		start, err := strconv.ParseUint(s, 10, 64)
-		if err != nil {
-			return 0, 0, false
-		}
-		end = start
-		return start, end, true
-	}
-	if m, _ := regexp.MatchString("[0-9]+-[0-9]+", s); m {
+	log.Info("Parsing block range", "input", s)
+	if m, _ := regexp.MatchString("^[0-9]+-[0-9]+$", s); m {
 		s1, s2, _ := strings.Cut(s, "-")
 		start, err := strconv.ParseUint(s1, 10, 64)
 		if err != nil {
@@ -779,6 +776,19 @@ func parseRange(s string) (start uint64, end uint64, ok bool) {
 		if err != nil {
 			return 0, 0, false
 		}
+		if start > end {
+			return 0, 0, false
+		}
+		log.Info("Parsing block range", "start", start, "end", end)
+		return start, end, true
+	}
+	if m, _ := regexp.MatchString("^[0-9]+$", s); m {
+		start, err := strconv.ParseUint(s, 10, 64)
+		if err != nil {
+			return 0, 0, false
+		}
+		end = start
+		log.Info("Parsing single block range", "block", start)
 		return start, end, true
 	}
 	return 0, 0, false
